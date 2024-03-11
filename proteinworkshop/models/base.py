@@ -12,7 +12,7 @@ from graphein.protein.tensor.angles import dihedrals
 from graphein.protein.tensor.data import ProteinBatch, get_random_protein
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import to_dense_batch
 
 from proteinworkshop.models.utils import get_loss
@@ -160,7 +160,10 @@ class BaseModel(L.LightningModule, abc.ABC):
                     labels["residue_type"] = batch.residue_type_uncorrupted
                 # Otherwise, use residue types
                 else:
-                    labels["residue_type"] = batch.residue_type
+                    if isinstance(batch, HeteroData):
+                        labels['residue_type'] = batch['real'].residue_type
+                    else:
+                        labels["residue_type"] = batch.residue_type
                 # If we have stored a mask, apply it
                 if hasattr(batch, "sequence_corruption_mask"):
                     labels["residue_type"] = labels["residue_type"][
@@ -386,9 +389,9 @@ class BaseModel(L.LightningModule, abc.ABC):
                         target = y[output]
 
                         if m == "perplexity":
-                            pred = to_dense_batch(pred, batch.batch)[0]
+                            pred = to_dense_batch(pred, batch['real'].batch)[0]
                             target = to_dense_batch(
-                                target, batch.batch, fill_value=-100
+                                target, batch['real'].batch, fill_value=-100
                             )[0]
                         # This is a hack for MSE-type metrics which fail on e.g. [4,1] & [4]
                         try:
@@ -399,7 +402,7 @@ class BaseModel(L.LightningModule, abc.ABC):
 
                     except (ValueError, RuntimeError):
                         continue
-        self.log_dict(log_dict, prog_bar=True)
+        self.log_dict(log_dict, prog_bar=True, batch_size=batch.num_graphs)
 
 
 class BenchMarkModel(BaseModel):
